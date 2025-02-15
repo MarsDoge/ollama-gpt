@@ -56,6 +56,13 @@ class CompileRunTool(QWidget):
             '<a href="https://github.com/MarsDoge/ollama-gpt">'
             '源码地址: https://github.com/MarsDoge/ollama-gpt</a>'
         )
+        # 新增版本号标签（仅增加这一行）
+        self.versionLabel = QLabel("版本号: v1.0.0")
+
+        # 将仓库地址和版本号放在一个水平布局中
+        repoLayout = QHBoxLayout()
+        repoLayout.addWidget(self.repoLabel)
+        repoLayout.addWidget(self.versionLabel)
 
         # ──────────────────────────────────────────────
         # 1. 源码路径选择区域，默认路径为当前目录下的ollama
@@ -144,7 +151,8 @@ class CompileRunTool(QWidget):
         # ──────────────────────────────────────────────
         mainLayout = QVBoxLayout()
         # 在最上方加上仓库地址标签
-        mainLayout.addWidget(self.repoLabel)
+        mainLayout.addLayout(repoLayout)  # 添加仓库地址和版本号水平布局
+        mainLayout.addWidget(self.versionLabel)
         mainLayout.addLayout(pathLayout)
         mainLayout.addLayout(buttonLayout)
         mainLayout.addLayout(modelLayout)
