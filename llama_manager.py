@@ -330,6 +330,22 @@ class CompileRunTool(QWidget):
         except Exception as e:
             self.logText.append("<font color='red'>[Pty Error] 发送命令失败: " + str(e) + "</font>")
 
+    def closeEvent(self, event):
+        """退出时清理所有子进程"""
+        # 清理所有 QProcess 启动的子进程
+        for proc in [self.process, self.serverProcess, self.clientProcess, self.modelListProcess]:
+            if proc.state() != QProcess.NotRunning:
+                proc.terminate()
+                proc.waitForFinished(3000)
+        # 清理通过 subprocess.Popen 启动的模型进程
+        if self.modelPtyProcess and self.modelPtyProcess.poll() is None:
+            self.modelPtyProcess.terminate()
+            try:
+                self.modelPtyProcess.wait(timeout=3)
+            except Exception:
+                self.modelPtyProcess.kill()
+        event.accept()
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     tool = CompileRunTool()
