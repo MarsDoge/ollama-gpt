@@ -44,7 +44,7 @@ class CompileRunTool(QWidget):
         
         # 源码路径选择区域
         self.pathLabel = QLabel("源码路径:")
-        self.pathEdit = QLineEdit("/path/to/llama/source")  # 根据实际情况修改默认路径
+        self.pathEdit = QLineEdit("/home/qdy/github/ollama-gpt/ollama")  # 根据实际情况修改默认路径
         self.browseButton = QPushButton("浏览")
         self.browseButton.clicked.connect(self.selectSourcePath)
         
@@ -305,8 +305,13 @@ class CompileRunTool(QWidget):
             if output:
                 self.logText.append("<font color='purple'>" + output + "</font>")
             else:
-                self.logText.append("模型进程输出结束。")
-                self.modelNotifier.setEnabled(False)
+                # 如果进程仍在运行，则不禁用 notifier
+                if self.modelPtyProcess and self.modelPtyProcess.poll() is None:
+                    # 进程未退出，可能只是当前没有输出
+                    pass
+                else:
+                    self.logText.append("模型进程输出结束。")
+                    self.modelNotifier.setEnabled(False)
         except Exception as e:
             self.logText.append("<font color='red'>[Pty Error] " + str(e) + "</font>")
     
