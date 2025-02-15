@@ -42,9 +42,9 @@ class CompileRunTool(QWidget):
         self.setWindowTitle('llama 编译与运行工具')
         self.resize(700, 600)
         
-        # 源码路径选择区域
+        # 源码路径选择区域，默认路径为当前路径下的ollama
         self.pathLabel = QLabel("源码路径:")
-        self.pathEdit = QLineEdit(os.path.join(os.getcwd(), "ollama")) # 根据实际情况修改默认路径
+        self.pathEdit = QLineEdit(os.path.join(os.getcwd(), "ollama"))
         self.browseButton = QPushButton("浏览")
         self.browseButton.clicked.connect(self.selectSourcePath)
         
@@ -53,38 +53,36 @@ class CompileRunTool(QWidget):
         pathLayout.addWidget(self.pathEdit)
         pathLayout.addWidget(self.browseButton)
         
-        # 编译、运行、服务端、客户端按钮区域
+        # 编译、一键启动服务器并列出模型、客户端按钮区域
         self.compileButton = QPushButton('一键编译')
-        self.runButton = QPushButton('运行')
-        self.runButton.setEnabled(False)  # 初始状态不可用
+        # 移除了原来的“运行”按钮
         
-        self.serverButton = QPushButton("开启服务端")
+        # 合并“开启服务器”和“列出支持的模型”的功能为一个按钮
+        self.serverListButton = QPushButton("开启服务器并列出模型")
+        self.serverListButton.clicked.connect(self.startServerAndListModels)
+        
         self.clientButton = QPushButton("开启客户端聊天交互")
         
         buttonLayout = QHBoxLayout()
         buttonLayout.addWidget(self.compileButton)
-        buttonLayout.addWidget(self.runButton)
-        buttonLayout.addWidget(self.serverButton)
+        buttonLayout.addWidget(self.serverListButton)
         buttonLayout.addWidget(self.clientButton)
         
         # 模型选择区域
         self.modelLabel = QLabel("模型选择:")
         self.modelComboBox = QComboBox()
-        self.listModelsButton = QPushButton("列出支持的模型")
-        self.listModelsButton.clicked.connect(self.listModels)
         self.runSelectedModelButton = QPushButton("运行所选模型")
         self.runSelectedModelButton.clicked.connect(self.runSelectedModel)
         
         modelLayout = QHBoxLayout()
         modelLayout.addWidget(self.modelLabel)
         modelLayout.addWidget(self.modelComboBox)
-        modelLayout.addWidget(self.listModelsButton)
         modelLayout.addWidget(self.runSelectedModelButton)
         
         # 交互命令输入区域（用于运行模型后的交互）
         self.interactiveLabel = QLabel("命令输入:")
         self.commandLineEdit = QLineEdit()
-        self.commandLineEdit.returnPressed.connect(self.sendCommand)  # 按回车时发送命令
+        self.commandLineEdit.returnPressed.connect(self.sendCommand)  # 回车发送命令
         self.sendCommandButton = QPushButton("发送命令")
         self.sendCommandButton.clicked.connect(self.sendCommand)
         interactiveLayout = QHBoxLayout()
@@ -107,8 +105,6 @@ class CompileRunTool(QWidget):
         
         # 信号与槽绑定
         self.compileButton.clicked.connect(self.compileSource)
-        self.runButton.clicked.connect(self.runExecutable)
-        self.serverButton.clicked.connect(self.startServer)
         self.clientButton.clicked.connect(self.startClient)
 
     def selectSourcePath(self):
@@ -136,11 +132,9 @@ class CompileRunTool(QWidget):
     def compileFinished(self, exitCode, exitStatus):
         if exitCode == 0:
             self.logText.append("编译成功!")
-            self.runButton.setEnabled(True)
             self.makeExecutable()
         else:
             self.logText.append("编译失败!")
-            self.runButton.setEnabled(False)
 
     def makeExecutable(self):
         """确保 ollama 文件具有执行权限"""
@@ -178,6 +172,13 @@ class CompileRunTool(QWidget):
             self.serverProcess.readyReadStandardOutput.connect(self.onServerOutput)
         else:
             self.logText.append(f"错误: 找不到文件 {ollama_path}")
+
+    def startServerAndListModels(self):
+        """
+        合并开启服务器和列出模型的功能
+        """
+        self.startServer()
+        self.listModels()
 
     def onServerStarted(self):
         self.logText.append("服务进程已成功启动")
@@ -308,7 +309,6 @@ class CompileRunTool(QWidget):
             else:
                 # 如果进程仍在运行，则不禁用 notifier
                 if self.modelPtyProcess and self.modelPtyProcess.poll() is None:
-                    # 进程未退出，可能只是当前没有输出
                     pass
                 else:
                     self.logText.append("模型进程输出结束。")
