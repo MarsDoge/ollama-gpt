@@ -44,7 +44,7 @@ class CompileRunTool(QWidget):
         
         # 源码路径选择区域
         self.pathLabel = QLabel("源码路径:")
-        self.pathEdit = QLineEdit("/home/qdy/github/ollama-gpt/ollama")  # 根据实际情况修改默认路径
+        self.pathEdit = QLineEdit(os.path.join(os.getcwd(), "ollama")) # 根据实际情况修改默认路径
         self.browseButton = QPushButton("浏览")
         self.browseButton.clicked.connect(self.selectSourcePath)
         
@@ -84,6 +84,7 @@ class CompileRunTool(QWidget):
         # 交互命令输入区域（用于运行模型后的交互）
         self.interactiveLabel = QLabel("命令输入:")
         self.commandLineEdit = QLineEdit()
+        self.commandLineEdit.returnPressed.connect(self.sendCommand)  # 按回车时发送命令
         self.sendCommandButton = QPushButton("发送命令")
         self.sendCommandButton.clicked.connect(self.sendCommand)
         interactiveLayout = QHBoxLayout()
