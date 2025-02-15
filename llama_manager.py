@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QFileDialog, QLabel, QLineEdit, QHBoxLayout, QComboBox
 )
 from PyQt5.QtCore import QProcess, QSocketNotifier, Qt
+from PyQt5.QtGui import QTextCursor
 
 def strip_ansi(text):
     """
@@ -12,6 +13,16 @@ def strip_ansi(text):
     """
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
+
+def get_arch_info():
+    """
+    通过 uname -m 获取系统架构信息
+    """
+    try:
+        arch = subprocess.check_output(["uname", "-m"]).decode("utf-8").strip()
+        return arch
+    except Exception as e:
+        return "Unknown architecture"
 
 class CompileRunTool(QWidget):
     def __init__(self):
@@ -46,27 +57,23 @@ class CompileRunTool(QWidget):
         self.setWindowTitle('ollama-gpt: 用AI迭代的程序')
         self.resize(800, 600)
         
-        # ──────────────────────────────────────────────
-        # 0. 仓库地址标签（可点击超链接）
-        # ──────────────────────────────────────────────
+        # 0. 仓库地址标签（可点击超链接）和版本号标签
         self.repoLabel = QLabel()
-        self.repoLabel.setTextFormat(Qt.RichText)           # 支持富文本
-        self.repoLabel.setOpenExternalLinks(True)           # 允许点击跳转外部链接
+        self.repoLabel.setTextFormat(Qt.RichText)
+        self.repoLabel.setOpenExternalLinks(True)
         self.repoLabel.setText(
             '<a href="https://github.com/MarsDoge/ollama-gpt">'
             '源码地址: https://github.com/MarsDoge/ollama-gpt</a>'
         )
-        # 新增版本号标签（仅增加这一行）
         self.versionLabel = QLabel("版本号: v1.0.0")
-
-        # 将仓库地址和版本号放在一个水平布局中
         repoLayout = QHBoxLayout()
         repoLayout.addWidget(self.repoLabel)
         repoLayout.addWidget(self.versionLabel)
-
-        # ──────────────────────────────────────────────
+        
+        # 0.1 架构信息标签，通过 uname -m 获取
+        self.archLabel = QLabel("架构: " + get_arch_info())
+        
         # 1. 源码路径选择区域，默认路径为当前目录下的ollama
-        # ──────────────────────────────────────────────
         self.pathLabel = QLabel("ollama路径:")
         self.pathEdit = QLineEdit(os.path.join(os.getcwd(), "ollama"))
         self.browseButton = QPushButton("浏览")
@@ -76,9 +83,7 @@ class CompileRunTool(QWidget):
         pathLayout.addWidget(self.pathEdit)
         pathLayout.addWidget(self.browseButton)
         
-        # ──────────────────────────────────────────────
         # 2. 编译 & 一键启动服务器并列出模型 按钮区域
-        # ──────────────────────────────────────────────
         self.compileButton = QPushButton('一键编译')
         self.serverListButton = QPushButton("开启服务器并列出模型")
         self.serverListButton.clicked.connect(self.startServerAndListModels)
@@ -86,9 +91,7 @@ class CompileRunTool(QWidget):
         buttonLayout.addWidget(self.compileButton)
         buttonLayout.addWidget(self.serverListButton)
         
-        # ──────────────────────────────────────────────
         # 3. 运行模型选择区域
-        # ──────────────────────────────────────────────
         self.modelLabel = QLabel("运行模型选择:")
         self.modelComboBox = QComboBox()
         self.runSelectedModelButton = QPushButton("运行所选模型")
@@ -98,13 +101,10 @@ class CompileRunTool(QWidget):
         modelLayout.addWidget(self.modelComboBox)
         modelLayout.addWidget(self.runSelectedModelButton)
         
-        # ──────────────────────────────────────────────
         # 4. 拉取模型区域（默认填写 deepseek-r1:7b）
-        # ──────────────────────────────────────────────
         self.pullModelLabel = QLabel("拉取模型选择:")
         self.pullModelComboBox = QComboBox()
         self.pullModelComboBox.setEditable(True)
-        # 默认填写 deepseek-r1:7b，并添加其它可选项
         self.pullModelComboBox.addItem("deepseek-r1:7b")
         self.pullModelComboBox.addItems(["1.5b", "7b", "13b"])
         self.pullModelButton = QPushButton("拉取所选模型")
@@ -120,9 +120,7 @@ class CompileRunTool(QWidget):
         pullProgressLayout.addWidget(QLabel("拉取进度:"))
         pullProgressLayout.addWidget(self.pullProgressLabel)
         
-        # ──────────────────────────────────────────────
         # 5. 交互命令输入区域（用于模型运行后的交互）
-        # ──────────────────────────────────────────────
         self.interactiveLabel = QLabel("命令输入:")
         self.commandLineEdit = QLineEdit()
         self.commandLineEdit.returnPressed.connect(self.sendCommand)
@@ -133,9 +131,7 @@ class CompileRunTool(QWidget):
         interactiveLayout.addWidget(self.commandLineEdit)
         interactiveLayout.addWidget(self.sendCommandButton)
         
-        # ──────────────────────────────────────────────
         # 6. 日志输出区域：左侧服务端日志 & 右侧输出端日志
-        # ──────────────────────────────────────────────
         self.serverLog = QTextEdit()
         self.serverLog.setReadOnly(True)
         self.serverLog.setPlaceholderText("服务端日志")
@@ -146,13 +142,10 @@ class CompileRunTool(QWidget):
         logLayout.addWidget(self.serverLog)
         logLayout.addWidget(self.modelLog)
         
-        # ──────────────────────────────────────────────
-        # 7. 主布局
-        # ──────────────────────────────────────────────
+        # 7. 主布局组装
         mainLayout = QVBoxLayout()
-        # 在最上方加上仓库地址标签
-        mainLayout.addLayout(repoLayout)  # 添加仓库地址和版本号水平布局
-        mainLayout.addWidget(self.versionLabel)
+        mainLayout.addLayout(repoLayout)
+        mainLayout.addWidget(self.archLabel)
         mainLayout.addLayout(pathLayout)
         mainLayout.addLayout(buttonLayout)
         mainLayout.addLayout(modelLayout)
@@ -165,17 +158,11 @@ class CompileRunTool(QWidget):
         # 信号与槽绑定
         self.compileButton.clicked.connect(self.compileSource)
 
-    # ──────────────────────────────────────────────
-    # 选择源码路径
-    # ──────────────────────────────────────────────
     def selectSourcePath(self):
         path = QFileDialog.getExistingDirectory(self, "选择源码目录", self.pathEdit.text())
         if path:
             self.pathEdit.setText(path)
 
-    # ──────────────────────────────────────────────
-    # 编译源码
-    # ──────────────────────────────────────────────
     def compileSource(self):
         self.serverLog.clear()
         self.serverLog.append("开始编译...")
@@ -208,9 +195,6 @@ class CompileRunTool(QWidget):
         else:
             self.serverLog.append(f"错误: 找不到 {ollama_path}")
 
-    # ──────────────────────────────────────────────
-    # 启动服务端
-    # ──────────────────────────────────────────────
     def startServer(self):
         self.serverLog.append("启动服务端：ollama serve")
         source_path = self.pathEdit.text()
@@ -262,9 +246,6 @@ class CompileRunTool(QWidget):
     def onServerErrorOccurred(self, error):
         self.serverLog.append(f"QProcess 错误: {error}")
 
-    # ──────────────────────────────────────────────
-    # 列出模型
-    # ──────────────────────────────────────────────
     def listModels(self):
         self.serverLog.append("列出支持的模型：ollama list")
         source_path = self.pathEdit.text()
@@ -301,9 +282,6 @@ class CompileRunTool(QWidget):
         error_output = strip_ansi(error_output)
         self.serverLog.append("<font color='red'>[Model List Error] " + error_output + "</font>")
 
-    # ──────────────────────────────────────────────
-    # 运行所选模型
-    # ──────────────────────────────────────────────
     def runSelectedModel(self):
         selected_model = self.modelComboBox.currentText()
         if not selected_model:
@@ -345,9 +323,12 @@ class CompileRunTool(QWidget):
             output = os.read(self.modelMaster, 1024).decode()
             output = strip_ansi(output)
             if output:
-                self.modelLog.append("<font color='purple'>" + output + "</font>")
+                cursor = self.modelLog.textCursor()
+                cursor.movePosition(QTextCursor.End)
+                cursor.insertHtml("<font color='purple'>" + output + "</font>")
+                self.modelLog.setTextCursor(cursor)
+                self.modelLog.ensureCursorVisible()
             else:
-                # 如果进程还在运行，暂时没有新输出；否则说明进程结束
                 if self.modelPtyProcess and self.modelPtyProcess.poll() is None:
                     pass
                 else:
@@ -371,9 +352,6 @@ class CompileRunTool(QWidget):
         except Exception as e:
             self.modelLog.append("<font color='red'>[Pty Error] 发送命令失败: " + str(e) + "</font>")
 
-    # ──────────────────────────────────────────────
-    # 拉取模型
-    # ──────────────────────────────────────────────
     def pullSelectedModel(self):
         selected_model = self.pullModelComboBox.currentText()
         if not selected_model:
@@ -392,22 +370,14 @@ class CompileRunTool(QWidget):
     def onPullOutput(self):
         data = self.pullProcess.readAllStandardOutput().data().decode()
         data = strip_ansi(data).strip()
-
-        # 1) 如果整行包含“pulling manifest”，我们先把它去掉
         if "pulling manifest" in data:
             data = data.replace("pulling manifest", "").strip()
-
-        # 2) 如果是进度信息（包含 "pulling" 和 "MB/"），更新进度标签
         if "pulling" in data and "MB/" in data:
             if self.pullProgressLabel.text() != data:
                 self.pullProgressLabel.setText(data)
-        # 3) 否则写入日志
         elif data:
             self.serverLog.append("<font color='orange'>" + data + "</font>")
         
-    # ──────────────────────────────────────────────
-    # 退出时清理所有子进程
-    # ──────────────────────────────────────────────
     def closeEvent(self, event):
         for proc in [self.process, self.serverProcess, self.modelListProcess, self.pullProcess]:
             if proc.state() != QProcess.NotRunning:
