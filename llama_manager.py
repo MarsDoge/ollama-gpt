@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QTextEdit, QVBoxLayout,
     QFileDialog, QLabel, QLineEdit, QHBoxLayout, QComboBox
 )
-from PyQt5.QtCore import QProcess, QSocketNotifier
+from PyQt5.QtCore import QProcess, QSocketNotifier, Qt
 
 def strip_ansi(text):
     """
@@ -43,13 +43,24 @@ class CompileRunTool(QWidget):
         self.modelNotifier = None
 
     def initUI(self):
-        self.setWindowTitle('llama 编译与运行工具')
+        self.setWindowTitle('ollama-gpt: 用AI迭代的程序')
         self.resize(800, 600)
         
         # ──────────────────────────────────────────────
+        # 0. 仓库地址标签（可点击超链接）
+        # ──────────────────────────────────────────────
+        self.repoLabel = QLabel()
+        self.repoLabel.setTextFormat(Qt.RichText)           # 支持富文本
+        self.repoLabel.setOpenExternalLinks(True)           # 允许点击跳转外部链接
+        self.repoLabel.setText(
+            '<a href="https://github.com/MarsDoge/ollama-gpt">'
+            '源码地址: https://github.com/MarsDoge/ollama-gpt</a>'
+        )
+
+        # ──────────────────────────────────────────────
         # 1. 源码路径选择区域，默认路径为当前目录下的ollama
         # ──────────────────────────────────────────────
-        self.pathLabel = QLabel("源码路径:")
+        self.pathLabel = QLabel("ollama路径:")
         self.pathEdit = QLineEdit(os.path.join(os.getcwd(), "ollama"))
         self.browseButton = QPushButton("浏览")
         self.browseButton.clicked.connect(self.selectSourcePath)
@@ -132,6 +143,8 @@ class CompileRunTool(QWidget):
         # 7. 主布局
         # ──────────────────────────────────────────────
         mainLayout = QVBoxLayout()
+        # 在最上方加上仓库地址标签
+        mainLayout.addWidget(self.repoLabel)
         mainLayout.addLayout(pathLayout)
         mainLayout.addLayout(buttonLayout)
         mainLayout.addLayout(modelLayout)
@@ -373,7 +386,6 @@ class CompileRunTool(QWidget):
         data = strip_ansi(data).strip()
 
         # 1) 如果整行包含“pulling manifest”，我们先把它去掉
-        #    这样如果本行同时也有进度信息，标签只显示进度
         if "pulling manifest" in data:
             data = data.replace("pulling manifest", "").strip()
 
