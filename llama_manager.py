@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, subprocess, pty, re
+import sys, os, subprocess, re, platform
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QTextEdit, QVBoxLayout,
     QFileDialog, QLabel, QLineEdit, QHBoxLayout, QComboBox
@@ -16,13 +16,9 @@ def strip_ansi(text):
 
 def get_arch_info():
     """
-    通过 uname -m 获取系统架构信息
+    使用 platform 模块获取系统架构信息
     """
-    try:
-        arch = subprocess.check_output(["uname", "-m"]).decode("utf-8").strip()
-        return arch
-    except Exception as e:
-        return "Unknown architecture"
+    return platform.machine()
 
 class CompileRunTool(QWidget):
     def __init__(self):
@@ -48,7 +44,7 @@ class CompileRunTool(QWidget):
         self.pullProcess.setProcessChannelMode(QProcess.MergedChannels)
         self.pullProcess.readyReadStandardOutput.connect(self.onPullOutput)
 
-        # 使用伪终端运行所选模型的进程（交互式进程）
+        # 用于运行模型交互式进程的变量
         self.modelPtyProcess = None
         self.modelMaster = None
         self.modelNotifier = None
@@ -70,7 +66,7 @@ class CompileRunTool(QWidget):
         repoLayout.addWidget(self.repoLabel)
         repoLayout.addWidget(self.versionLabel)
         
-        # 0.1 架构信息标签，通过 uname -m 获取
+        # 0.1 架构信息标签，通过 platform 获取
         self.archLabel = QLabel("架构: " + get_arch_info())
         
         # 1. 源码路径选择区域，默认路径为当前目录下的ollama
@@ -163,11 +159,22 @@ class CompileRunTool(QWidget):
         if path:
             self.pathEdit.setText(path)
 
+    def get_ollama_path(self):
+        source_path = self.pathEdit.text()
+        exe_name = "ollama.exe" if os.name == "nt" else "ollama"
+        return os.path.join(source_path, exe_name)
+    
     def compileSource(self):
         self.serverLog.clear()
         self.serverLog.append("开始编译...")
         source_path = self.pathEdit.text()
-        self.process.start("make", ["-C", source_path])
+        if os.name == 'nt':  # Windows 平台
+            # 使用 mingw32-make 或 cmake，根据实际环境选择
+            self.process.start("mingw32-make", ["-C", source_path])
+            # 如使用 cmake，则取消注释下面的行：
+            # self.process.start("cmake", ["--build", source_path])
+        else:
+            self.process.start("make", ["-C", source_path])
         self.process.finished.connect(self.compileFinished)
 
     def onOutput(self):
@@ -188,17 +195,17 @@ class CompileRunTool(QWidget):
             self.serverLog.append("编译失败!")
 
     def makeExecutable(self):
-        source_path = self.pathEdit.text()
-        ollama_path = os.path.join(source_path, "ollama")
-        if os.path.exists(ollama_path):
-            os.chmod(ollama_path, 0o755)
-        else:
-            self.serverLog.append(f"错误: 找不到 {ollama_path}")
+        # Windows 不需要修改文件权限
+        if os.name != "nt":
+            ollama_path = self.get_ollama_path()
+            if os.path.exists(ollama_path):
+                os.chmod(ollama_path, 0o755)
+            else:
+                self.serverLog.append(f"错误: 找不到 {ollama_path}")
 
     def startServer(self):
         self.serverLog.append("启动服务端：ollama serve")
-        source_path = self.pathEdit.text()
-        ollama_path = os.path.join(source_path, "ollama")
+        ollama_path = self.get_ollama_path()
         if os.path.exists(ollama_path):
             self.makeExecutable()
             self.serverLog.append(f"服务器路径: {ollama_path}")
@@ -207,7 +214,7 @@ class CompileRunTool(QWidget):
             self.serverProcess.setWorkingDirectory(working_directory)
             self.serverProcess.started.connect(self.onServerStarted)
             self.serverProcess.errorOccurred.connect(self.onServerErrorOccurred)
-            self.serverProcess.start(f"{ollama_path}", ["serve"])
+            self.serverProcess.start(ollama_path, ["serve"])
             if not self.serverProcess.waitForStarted(3000):
                 self.serverLog.append("启动进程失败！")
                 return
@@ -248,11 +255,10 @@ class CompileRunTool(QWidget):
 
     def listModels(self):
         self.serverLog.append("列出支持的模型：ollama list")
-        source_path = self.pathEdit.text()
-        ollama_path = os.path.join(source_path, "ollama")
+        ollama_path = self.get_ollama_path()
         if os.path.exists(ollama_path):
             self.makeExecutable()
-            self.modelListProcess.start(f"{ollama_path}", ["list"])
+            self.modelListProcess.start(ollama_path, ["list"])
         else:
             self.serverLog.append(f"错误: 找不到文件 {ollama_path}")
 
@@ -287,37 +293,73 @@ class CompileRunTool(QWidget):
         if not selected_model:
             self.modelLog.append("未选择模型！")
             return
+
         self.modelLog.append(f"运行所选模型：ollama run {selected_model}")
-        source_path = self.pathEdit.text()
-        ollama_path = os.path.join(source_path, "ollama")
+        ollama_path = self.get_ollama_path()
         if not os.path.exists(ollama_path):
             self.modelLog.append(f"错误: 找不到文件 {ollama_path}")
             return
+
         self.makeExecutable()
-        try:
-            self.modelMaster, modelSlave = os.openpty()
-        except Exception as e:
-            self.modelLog.append("<font color='red'>[Pty Error] 无法打开伪终端: " + str(e) + "</font>")
-            return
-        try:
+
+        if os.name == 'nt':
+            # 使用pywinpty在Windows上模拟伪终端
+            import pywinpty
+            master, slave = pywinpty.open()
+
             self.modelPtyProcess = subprocess.Popen(
                 [ollama_path, "run", selected_model],
-                stdin=modelSlave,
-                stdout=modelSlave,
-                stderr=modelSlave,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
                 bufsize=0,
                 close_fds=True
             )
-        except Exception as e:
-            self.modelLog.append("<font color='red'>[Pty Error] 启动进程失败: " + str(e) + "</font>")
+            os.close(slave)
+
+            self.modelNotifier = QSocketNotifier(master, QSocketNotifier.Read)
+            self.modelNotifier.activated.connect(self.onModelPtyOutput)
+            self.modelLog.append("模型进程已启动，等待输出...")
+
+        else:
+            try:
+                self.modelMaster, modelSlave = os.openpty()
+            except Exception as e:
+                self.modelLog.append("<font color='red'>[Pty Error] 无法打开伪终端: " + str(e) + "</font>")
+                return
+            try:
+                self.modelPtyProcess = subprocess.Popen(
+                    [ollama_path, "run", selected_model],
+                    stdin=modelSlave,
+                    stdout=modelSlave,
+                    stderr=modelSlave,
+                    bufsize=0,
+                    close_fds=True
+                )
+            except Exception as e:
+                self.modelLog.append("<font color='red'>[Pty Error] 启动进程失败: " + str(e) + "</font>")
+                os.close(modelSlave)
+                os.close(self.modelMaster)
+                return
             os.close(modelSlave)
-            os.close(self.modelMaster)
-            return
-        os.close(modelSlave)
-        self.modelNotifier = QSocketNotifier(self.modelMaster, QSocketNotifier.Read)
-        self.modelNotifier.activated.connect(self.onModelPtyOutput)
-        self.modelLog.append("模型进程已启动，等待输出...")
-        
+            self.modelNotifier = QSocketNotifier(self.modelMaster, QSocketNotifier.Read)
+            self.modelNotifier.activated.connect(self.onModelPtyOutput)
+            self.modelLog.append("模型进程已启动，等待输出...")
+
+    def onModelOutput(self):
+        if self.modelPtyProcess:
+            output = self.modelPtyProcess.readAllStandardOutput().data().decode()
+            output = strip_ansi(output)
+            if output:
+                cursor = self.modelLog.textCursor()
+                cursor.movePosition(QTextCursor.End)
+                cursor.insertHtml("<font color='purple'>" + output + "</font>")
+                self.modelLog.setTextCursor(cursor)
+                self.modelLog.ensureCursorVisible()
+            else:
+                if self.modelPtyProcess.state() == QProcess.NotRunning:
+                    self.modelLog.append("模型进程输出结束。")
+
     def onModelPtyOutput(self):
         try:
             output = os.read(self.modelMaster, 1024).decode()
@@ -342,15 +384,26 @@ class CompileRunTool(QWidget):
         if not cmd:
             self.modelLog.append("请输入命令")
             return
-        if self.modelPtyProcess is None or self.modelPtyProcess.poll() is not None:
-            self.modelLog.append("模型运行进程未启动")
-            return
-        try:
-            os.write(self.modelMaster, (cmd + "\n").encode())
-            self.modelLog.append(f"发送命令: {cmd}")
-            self.commandLineEdit.clear()
-        except Exception as e:
-            self.modelLog.append("<font color='red'>[Pty Error] 发送命令失败: " + str(e) + "</font>")
+        if os.name == 'nt':
+            if self.modelPtyProcess is None or self.modelPtyProcess.state() == QProcess.NotRunning:
+                self.modelLog.append("模型运行进程未启动")
+                return
+            try:
+                self.modelPtyProcess.write((cmd + "\n").encode())
+                self.modelLog.append(f"发送命令: {cmd}")
+                self.commandLineEdit.clear()
+            except Exception as e:
+                self.modelLog.append("<font color='red'>[Pty Error] 发送命令失败: " + str(e) + "</font>")
+        else:
+            if self.modelPtyProcess is None or self.modelPtyProcess.poll() is not None:
+                self.modelLog.append("模型运行进程未启动")
+                return
+            try:
+                os.write(self.modelMaster, (cmd + "\n").encode())
+                self.modelLog.append(f"发送命令: {cmd}")
+                self.commandLineEdit.clear()
+            except Exception as e:
+                self.modelLog.append("<font color='red'>[Pty Error] 发送命令失败: " + str(e) + "</font>")
 
     def pullSelectedModel(self):
         selected_model = self.pullModelComboBox.currentText()
@@ -358,14 +411,13 @@ class CompileRunTool(QWidget):
             self.serverLog.append("未选择要拉取的模型！")
             return
         self.serverLog.append(f"开始拉取模型：ollama pull {selected_model}")
-        source_path = self.pathEdit.text()
-        ollama_path = os.path.join(source_path, "ollama")
+        ollama_path = self.get_ollama_path()
         if not os.path.exists(ollama_path):
             self.serverLog.append(f"错误: 找不到文件 {ollama_path}")
             return
         self.makeExecutable()
         self.pullProcess.setWorkingDirectory(os.path.dirname(ollama_path))
-        self.pullProcess.start(f"{ollama_path}", ["pull", selected_model])
+        self.pullProcess.start(ollama_path, ["pull", selected_model])
         
     def onPullOutput(self):
         data = self.pullProcess.readAllStandardOutput().data().decode()
@@ -383,12 +435,13 @@ class CompileRunTool(QWidget):
             if proc.state() != QProcess.NotRunning:
                 proc.terminate()
                 proc.waitForFinished(3000)
-        if self.modelPtyProcess and self.modelPtyProcess.poll() is None:
-            self.modelPtyProcess.terminate()
-            try:
-                self.modelPtyProcess.wait(timeout=3)
-            except Exception:
-                self.modelPtyProcess.kill()
+        if os.name != 'nt':
+            if self.modelPtyProcess and self.modelPtyProcess.poll() is None:
+                self.modelPtyProcess.terminate()
+                try:
+                    self.modelPtyProcess.wait(timeout=3)
+                except Exception:
+                    self.modelPtyProcess.kill()
         event.accept()
 
 if __name__ == '__main__':
@@ -396,4 +449,3 @@ if __name__ == '__main__':
     tool = CompileRunTool()
     tool.show()
     sys.exit(app.exec_())
-
