@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 import sys, os, re, platform, json, requests
+from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QTextEdit, QVBoxLayout,
     QFileDialog, QLabel, QLineEdit, QHBoxLayout, QComboBox, QProgressBar
 )
 from PyQt5.QtCore import QProcess, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QTextCursor
+
+# 定义日志存储目录，自动创建 logs 目录
+log_dir = os.path.join(os.getcwd(), "logs")
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
 
 def strip_output(text):
     """
@@ -82,6 +88,12 @@ class GenerateThread(QThread):
     def run(self):
         try:
             response = requests.post(self.url, json=self.payload, timeout=self.timeout, stream=True)
+            # 初始化对话记录，包含时间戳、输入 prompt 和响应列表
+            chat_log = {
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "prompt": self.payload.get("prompt", ""),
+                "responses": []
+            }
             for line in response.iter_lines():
                 if not self._running:
                     break
@@ -91,9 +103,15 @@ class GenerateThread(QThread):
                     try:
                         obj = json.loads(decoded_line)
                         if "response" in obj:
+                            chat_log["responses"].append(obj["response"])
                             self.model_signal.emit(obj["response"])
                     except Exception:
                         pass
+            # 将对话记录追加保存到日志文件
+            log_file = os.path.join(log_dir, "chat_log.json")
+            with open(log_file, "a", encoding="utf-8") as f:
+                json.dump(chat_log, f, ensure_ascii=False)
+                f.write("\n")
             self.log_signal.emit("生成完成。")
         except Exception as e:
             self.log_signal.emit(f"生成异常：{e}")
@@ -206,6 +224,10 @@ class CompileRunTool(QWidget):
         self.modelLog.setReadOnly(True)
         self.modelLog.setPlaceholderText("客户端输出(有效数据)")
         
+        # 在日志区域下增加“查看聊天记录”按钮
+        self.viewLogButton = QPushButton("查看聊天记录")
+        self.viewLogButton.clicked.connect(self.viewChatLog)
+        
         logLayout = QHBoxLayout()
         logLayout.addWidget(self.serverLog)
         logLayout.addWidget(self.rawLog)
@@ -221,6 +243,7 @@ class CompileRunTool(QWidget):
         mainLayout.addLayout(progressLayout)
         mainLayout.addLayout(interactiveLayout)
         mainLayout.addLayout(logLayout)
+        mainLayout.addWidget(self.viewLogButton)
         self.setLayout(mainLayout)
         
         self.compileButton.clicked.connect(self.compileSource)
@@ -389,7 +412,6 @@ class CompileRunTool(QWidget):
             self.generateThread.wait()
         self.generateThread = GenerateThread(url, payload, timeout=30)
         self.generateThread.raw_signal.connect(lambda line: self.rawLog.append(line))
-        # 修改这里：使用 updateModelOutput 来更新右侧日志，避免每次换行
         self.generateThread.model_signal.connect(self.updateModelOutput)
         self.generateThread.log_signal.connect(lambda text: self.modelLog.append(text))
         self.generateThread.start()
@@ -405,6 +427,16 @@ class CompileRunTool(QWidget):
         cursor.insertText(text)
         self.modelLog.setTextCursor(cursor)
         self.modelLog.ensureCursorVisible()
+
+    def viewChatLog(self):
+        """查看聊天记录，将 logs/chat_log.json 中的内容显示在 modelLog 中"""
+        log_file = os.path.join(log_dir, "chat_log.json")
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8") as f:
+                logs = f.read()
+            self.modelLog.append("\n=== 聊天记录 ===\n" + logs)
+        else:
+            self.modelLog.append("暂无聊天记录")
 
     def closeEvent(self, event):
         for proc in [self.process, self.serverProcess, self.modelListProcess]:
