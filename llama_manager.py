@@ -7,12 +7,17 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QProcess, QSocketNotifier, Qt
 from PyQt5.QtGui import QTextCursor
 
-def strip_ansi(text):
+def strip_output(text):
     """
-    使用正则表达式过滤 ANSI 转义序列
+    过滤 ANSI 转义序列和 spinner 字符（例如：⠙ ⠹ ⠸ ⠴ ⠦ ⠧ ⠇ ⠏ ⠋）
     """
+    # 过滤 ANSI 转义序列
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-    return ansi_escape.sub('', text)
+    text = ansi_escape.sub('', text)
+    # 过滤 spinner 字符
+    spinner_pattern = re.compile(r'[⠙⠹⠸⠴⠦⠧⠇⠏⠋]+')
+    text = spinner_pattern.sub('', text)
+    return text
 
 def get_arch_info():
     """
@@ -179,12 +184,12 @@ class CompileRunTool(QWidget):
 
     def onOutput(self):
         data = self.process.readAllStandardOutput().data().decode()
-        data = strip_ansi(data)
+        data = strip_output(data)
         self.serverLog.append(data)
 
     def onError(self):
         data = self.process.readAllStandardError().data().decode()
-        data = strip_ansi(data)
+        data = strip_output(data)
         self.serverLog.append("<font color='red'>" + data + "</font>")
 
     def compileFinished(self, exitCode, exitStatus):
@@ -237,17 +242,17 @@ class CompileRunTool(QWidget):
         else:
             self.serverLog.append(f"服务端启动失败，退出码: {exitCode}, 状态: {exitStatus}")
             error_msg = self.serverProcess.readAllStandardError().data().decode()
-            error_msg = strip_ansi(error_msg)
+            error_msg = strip_output(error_msg)
             self.serverLog.append(f"错误信息：{error_msg}")
 
     def onServerOutput(self):
         data = self.serverProcess.readAllStandardOutput().data().decode()
-        data = strip_ansi(data)
+        data = strip_output(data)
         self.serverLog.append("<font color='blue'>" + data + "</font>")
 
     def onServerError(self):
         data = self.serverProcess.readAllStandardError().data().decode()
-        data = strip_ansi(data)
+        data = strip_output(data)
         self.serverLog.append("<font color='blue'>[Server Error] " + data + "</font>")
 
     def onServerErrorOccurred(self, error):
@@ -264,7 +269,7 @@ class CompileRunTool(QWidget):
 
     def onModelListOutput(self):
         output = self.modelListProcess.readAllStandardOutput().data().decode()
-        output = strip_ansi(output)
+        output = strip_output(output)
         self.serverLog.append("模型列表输出：")
         self.serverLog.append(output)
         model_names = []
@@ -285,7 +290,7 @@ class CompileRunTool(QWidget):
 
     def onModelListError(self):
         error_output = self.modelListProcess.readAllStandardError().data().decode()
-        error_output = strip_ansi(error_output)
+        error_output = strip_output(error_output)
         self.serverLog.append("<font color='red'>[Model List Error] " + error_output + "</font>")
 
     def runSelectedModel(self):
@@ -363,7 +368,7 @@ class CompileRunTool(QWidget):
     def onModelPtyOutput(self):
         try:
             output = os.read(self.modelMaster, 1024).decode()
-            output = strip_ansi(output)
+            output = strip_output(output)
             if output:
                 cursor = self.modelLog.textCursor()
                 cursor.movePosition(QTextCursor.End)
@@ -421,7 +426,7 @@ class CompileRunTool(QWidget):
         
     def onPullOutput(self):
         data = self.pullProcess.readAllStandardOutput().data().decode()
-        data = strip_ansi(data).strip()
+        data = strip_output(data).strip()
         if "pulling manifest" in data:
             data = data.replace("pulling manifest", "").strip()
         if "pulling" in data and "MB/" in data:
