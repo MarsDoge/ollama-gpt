@@ -9,7 +9,7 @@ from PyQt5.QtGui import QTextCursor
 
 def strip_output(text):
     """
-    过滤 ANSI 转义序列和 spinner 字符（例如：⠙ ⠹ ⠸ ⠴ ⠦ ⠧ ⠇ ⠏ ⠋）
+    过滤 ANSI 转义序列和 spinner 字符（例如：⠙ ⠹ ⠸ ⠴ ⠦⠧⠇⠏⠋）
     """
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     text = ansi_escape.sub('', text)
@@ -22,7 +22,7 @@ def get_arch_info():
 
 class PullThread(QThread):
     progress_signal = pyqtSignal(int)   # 进度百分比
-    log_signal = pyqtSignal(str)        # 用于在UI上显示日志（拉取进度的debug信息）
+    log_signal = pyqtSignal(str)        # 显示日志信息（调试信息）
     info_signal = pyqtSignal(str)       # 下载信息，如“Downloaded: ... / Total: ...”
 
     def __init__(self, url, payload, timeout=30, parent=None):
@@ -41,9 +41,7 @@ class PullThread(QThread):
                     break
                 if line:
                     decoded_line = line.decode('utf-8').strip()
-                    # 输出调试信息
                     self.log_signal.emit("<font color='orange'>DEBUG: " + decoded_line + "</font>")
-                    # 尝试解析 JSON 格式进度信息
                     try:
                         obj = json.loads(decoded_line)
                         if "total" in obj and "completed" in obj:
@@ -54,7 +52,6 @@ class PullThread(QThread):
                                 self.progress_signal.emit(progress)
                                 self.info_signal.emit(f"Downloaded: {completed} bytes / Total: {total} bytes")
                     except Exception:
-                        # 如果 JSON 解析失败，尝试正则匹配（根据实际返回格式调整）
                         match = re.search(r'Downloaded:\s*(\d+).*Total:\s*(\d+)', decoded_line)
                         if match:
                             completed = int(match.group(1))
@@ -71,12 +68,8 @@ class PullThread(QThread):
         self._running = False
 
 class GenerateThread(QThread):
-    """
-    该线程调用 /api/generate 接口，并将每行输出都视为原始输出，通过 raw_signal 发给UI；
-    如果能解析出 JSON 且包含 "response" 字段，则仅把 "response" 的内容视为「有效数据」发给 model_signal。
-    """
     raw_signal = pyqtSignal(str)     # 原始输出信号
-    model_signal = pyqtSignal(str)   # 仅包含有效数据的信号
+    model_signal = pyqtSignal(str)   # 有效数据输出信号
     log_signal = pyqtSignal(str)     # 其他日志信息
 
     def __init__(self, url, payload, timeout=30, parent=None):
@@ -94,18 +87,13 @@ class GenerateThread(QThread):
                     break
                 if line:
                     decoded_line = line.decode('utf-8').strip()
-                    # 将每一行都当作原始输出
                     self.raw_signal.emit(decoded_line)
-
-                    # 如果这一行能被JSON解析，且包含"response"，就把"response"视为有效数据
                     try:
                         obj = json.loads(decoded_line)
                         if "response" in obj:
-                            # 只显示 obj["response"] 作为有效数据
                             self.model_signal.emit(obj["response"])
                     except Exception:
                         pass
-
             self.log_signal.emit("生成完成。")
         except Exception as e:
             self.log_signal.emit(f"生成异常：{e}")
@@ -116,21 +104,18 @@ class GenerateThread(QThread):
 class CompileRunTool(QWidget):
     def __init__(self):
         super().__init__()
-        self.pullThread = None       # 用于拉取模型的线程
-        self.generateThread = None   # 用于生成模型回复的线程
+        self.pullThread = None
+        self.generateThread = None
         self.initUI()
 
-        # 用于编译的 QProcess
         self.process = QProcess(self)
         self.process.readyReadStandardOutput.connect(self.onOutput)
         self.process.readyReadStandardError.connect(self.onError)
 
-        # 用于启动服务器的 QProcess
         self.serverProcess = QProcess(self)
         self.serverProcess.readyReadStandardOutput.connect(self.onServerOutput)
         self.serverProcess.readyReadStandardError.connect(self.onServerError)
 
-        # 用于列出模型的 QProcess（备用，主要使用 API）
         self.modelListProcess = QProcess(self)
         self.modelListProcess.readyReadStandardOutput.connect(self.onModelListOutput)
         self.modelListProcess.readyReadStandardError.connect(self.onModelListError)
@@ -140,7 +125,6 @@ class CompileRunTool(QWidget):
         self.setWindowTitle('ollama-gpt: 用AI迭代的程序')
         self.resize(900, 600)
         
-        # 0. 仓库地址与版本号
         self.repoLabel = QLabel()
         self.repoLabel.setTextFormat(Qt.RichText)
         self.repoLabel.setOpenExternalLinks(True)
@@ -153,10 +137,8 @@ class CompileRunTool(QWidget):
         repoLayout.addWidget(self.repoLabel)
         repoLayout.addWidget(self.versionLabel)
         
-        # 0.1 架构信息
         self.archLabel = QLabel("架构: " + get_arch_info())
         
-        # 1. 源码路径选择区域
         self.pathLabel = QLabel("ollama路径:")
         self.pathEdit = QLineEdit(os.path.join(os.getcwd(), "ollama"))
         self.browseButton = QPushButton("浏览")
@@ -166,7 +148,6 @@ class CompileRunTool(QWidget):
         pathLayout.addWidget(self.pathEdit)
         pathLayout.addWidget(self.browseButton)
         
-        # 2. 编译 & 一键启动服务器并列出模型
         self.compileButton = QPushButton('一键编译')
         self.serverListButton = QPushButton("开启服务器并列出模型")
         self.serverListButton.clicked.connect(self.startServerAndListModels)
@@ -174,7 +155,6 @@ class CompileRunTool(QWidget):
         buttonLayout.addWidget(self.compileButton)
         buttonLayout.addWidget(self.serverListButton)
         
-        # 3. 运行模型选择区域
         self.modelLabel = QLabel("运行模型选择:")
         self.modelComboBox = QComboBox()
         self.runSelectedModelButton = QPushButton("运行所选模型")
@@ -184,7 +164,6 @@ class CompileRunTool(QWidget):
         modelLayout.addWidget(self.modelComboBox)
         modelLayout.addWidget(self.runSelectedModelButton)
         
-        # 4. 拉取模型区域
         self.pullModelLabel = QLabel("拉取模型选择:")
         self.pullModelComboBox = QComboBox()
         self.pullModelComboBox.setEditable(True)
@@ -197,7 +176,6 @@ class CompileRunTool(QWidget):
         pullLayout.addWidget(self.pullModelComboBox)
         pullLayout.addWidget(self.pullModelButton)
         
-        # 4.1 进度条和信息标签显示拉取进度
         self.progressBar = QProgressBar()
         self.progressBar.setRange(0, 100)
         self.progressInfoLabel = QLabel("Downloaded: 0 bytes / Total: 0 bytes")
@@ -206,7 +184,6 @@ class CompileRunTool(QWidget):
         progressLayout.addWidget(self.progressBar)
         progressLayout.addWidget(self.progressInfoLabel)
         
-        # 5. 交互命令输入区域
         self.interactiveLabel = QLabel("命令输入:")
         self.commandLineEdit = QLineEdit()
         self.commandLineEdit.returnPressed.connect(self.sendCommand)
@@ -217,10 +194,6 @@ class CompileRunTool(QWidget):
         interactiveLayout.addWidget(self.commandLineEdit)
         interactiveLayout.addWidget(self.sendCommandButton)
         
-        # 6. 三列日志输出区域
-        #    左侧：服务端日志（serverLog）
-        #    中间：原始输出（rawLog）
-        #    右侧：客户端输出（modelLog）只显示有效数据
         self.serverLog = QTextEdit()
         self.serverLog.setReadOnly(True)
         self.serverLog.setPlaceholderText("服务端日志")
@@ -238,7 +211,6 @@ class CompileRunTool(QWidget):
         logLayout.addWidget(self.rawLog)
         logLayout.addWidget(self.modelLog)
         
-        # 主布局组装
         mainLayout = QVBoxLayout()
         mainLayout.addLayout(repoLayout)
         mainLayout.addWidget(self.archLabel)
@@ -387,7 +359,6 @@ class CompileRunTool(QWidget):
         self.serverLog.append(f"开始拉取模型：{selected_model}（通过 API 调用）")
         url = "http://localhost:11434/api/pull"
         payload = {"name": selected_model, "stream": True}
-        # 如果之前有拉取线程在运行，则先停止它
         if self.pullThread is not None and self.pullThread.isRunning():
             self.pullThread.stop()
             self.pullThread.wait()
@@ -398,9 +369,6 @@ class CompileRunTool(QWidget):
         self.pullThread.start()
 
     def runSelectedModel(self):
-        """
-        通过 GenerateThread 实现流式输出。所有原始行存入 rawLog，若能解析出 JSON 且含 'response' 则存入 modelLog
-        """
         selected_model = self.modelComboBox.currentText()
         if not selected_model:
             self.modelLog.append("未选择模型！")
@@ -414,24 +382,29 @@ class CompileRunTool(QWidget):
         payload = {
             "model": selected_model,
             "prompt": prompt_text,
-            "stream": True  # 流式输出
+            "stream": True
         }
-        # 如果有旧的生成线程，先停止
         if self.generateThread is not None and self.generateThread.isRunning():
             self.generateThread.stop()
             self.generateThread.wait()
         self.generateThread = GenerateThread(url, payload, timeout=30)
-        # 原始数据输出到 rawLog
         self.generateThread.raw_signal.connect(lambda line: self.rawLog.append(line))
-        # 只显示 "response" 字段的文本到 modelLog
-        self.generateThread.model_signal.connect(lambda text: self.modelLog.append(text))
-        # 其他日志信息
+        # 修改这里：使用 updateModelOutput 来更新右侧日志，避免每次换行
+        self.generateThread.model_signal.connect(self.updateModelOutput)
         self.generateThread.log_signal.connect(lambda text: self.modelLog.append(text))
         self.generateThread.start()
 
     def sendCommand(self):
         self.runSelectedModel()
         self.commandLineEdit.clear()
+
+    def updateModelOutput(self, text):
+        """将有效数据插入到 modelLog 的当前行，不自动换行"""
+        cursor = self.modelLog.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertText(text)
+        self.modelLog.setTextCursor(cursor)
+        self.modelLog.ensureCursorVisible()
 
     def closeEvent(self, event):
         for proc in [self.process, self.serverProcess, self.modelListProcess]:
